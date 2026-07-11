@@ -1,0 +1,218 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <SD.h>
+#include <SPI.h>
+
+#define SD_CS 5
+
+const char* ssid = "Roman";
+const char* password = "Padar@2025";
+
+WebServer server(80);
+
+File uploadFile;
+
+
+String page()
+{
+  String html = "<html><body>";
+  html += "<h1>ESP32 SD Manager</h1>";
+
+  html += R"(
+  <form method="POST" action="/upload" enctype="multipart/form-data">
+  <input type="file" name="upload">
+  <input type="submit" value="Upload">
+  </form>
+  <hr>
+  )";
+
+
+  File root = SD.open("/");
+
+  File file = root.openNextFile();
+
+
+  while(file)
+  {
+    html += "<p>";
+
+    html += file.name();
+
+    html += " (";
+    html += file.size();
+    html += " bytes) ";
+
+    html += "<a href='/delete?file=";
+    html += file.name();
+    html += "'>Delete</a>";
+
+    html += "</p>";
+
+    file = root.openNextFile();
+  }
+
+
+  html += "</body></html>";
+
+  return html;
+}
+
+
+
+void handleRoot()
+{
+  server.send(200,"text/html",page());
+}
+
+
+
+void handleDelete()
+{
+
+if(server.hasArg("file"))
+{
+
+String filename = "/" + server.arg("file");
+
+if(SD.remove(filename))
+{
+server.send(200,"text/html",
+"Deleted<br><a href='/'>Back</a>");
+}
+
+else
+{
+server.send(200,"text/html",
+"Failed");
+}
+
+}
+
+}
+
+
+
+
+void handleUpload()
+{
+
+HTTPUpload& upload = server.upload();
+
+
+if(upload.status == UPLOAD_FILE_START)
+{
+
+String filename = "/" + upload.filename;
+
+Serial.print("Uploading ");
+Serial.println(filename);
+
+
+if(SD.exists(filename))
+SD.remove(filename);
+
+
+uploadFile = SD.open(filename,FILE_WRITE);
+
+}
+
+
+else if(upload.status == UPLOAD_FILE_WRITE)
+{
+
+if(uploadFile)
+uploadFile.write(upload.buf,upload.currentSize);
+
+}
+
+
+else if(upload.status == UPLOAD_FILE_END)
+{
+
+if(uploadFile)
+uploadFile.close();
+
+
+Serial.println("Upload complete");
+
+}
+
+}
+
+
+
+
+void setup()
+{
+
+Serial.begin(115200);
+
+
+
+if(!SD.begin(SD_CS))
+{
+Serial.println("SD FAILED");
+return;
+}
+
+Serial.println("SD OK");
+
+
+
+WiFi.begin(ssid,password);
+
+
+Serial.print("Connecting");
+
+
+while(WiFi.status()!=WL_CONNECTED)
+{
+delay(500);
+Serial.print(".");
+}
+
+
+Serial.println();
+
+
+Serial.println("Connected!");
+
+Serial.print("ESP32 IP: ");
+Serial.println(WiFi.localIP());
+
+
+
+server.on("/",HTTP_GET,handleRoot);
+
+
+server.on("/delete",
+HTTP_GET,
+handleDelete);
+
+
+
+server.on("/upload",
+HTTP_POST,
+[](){
+
+server.send(200,"text/html",
+"Upload done<br><a href='/'>Back</a>");
+
+},
+handleUpload);
+
+
+
+server.begin();
+
+
+Serial.println("Server started");
+
+}
+
+
+
+void loop()
+{
+server.handleClient();
+}
