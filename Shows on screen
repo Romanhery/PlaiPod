@@ -1,0 +1,168 @@
+/*
+  ESP32 + SD Card + SH1107 128x128 OLED — Song List Display
+  ------------------------------------------------------------
+  Lists audio files (.mp3/.wav) from the SD card root (and one
+  level of subfolders) and displays them on the SH1107 screen.
+
+  ASSUMPTIONS (adjust if your wiring differs):
+    - SH1107 is the common I2C variant, address 0x3C
+    - SD card is on the ESP32's VSPI bus with its own CS pin
+    - Libraries needed (install via Library Manager):
+        - Adafruit GFX Library
+        - Adafruit SH110X
+        - SD (built-in, ESP32 core)
+
+  WIRING (typical):
+    SH1107 OLED (I2C):
+      VCC -> 3V3
+      GND -> GND
+      SDA -> GPIO 21
+      SCL -> GPIO 22
+
+    SD Card module (SPI / VSPI):
+      VCC -> 3V3 (or 5V if module has a regulator)
+      GND -> GND
+      SCK  -> GPIO 18
+      MISO -> GPIO 19
+      MOSI -> GPIO 23
+      CS   -> GPIO 5   (change SD_CS below to match your build)
+*/
+
+#include <Wire.h>
+#include <SPI.h>
+#include <SD.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SH110X.h>
+
+// ---------- Display config ----------
+#define SCREEN_WIDTH  128
+#define SCREEN_HEIGHT 128
+#define OLED_I2C_ADDR 0x3C
+
+Adafruit_SH1107 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+// ---------- SD card config ----------
+#define SD_CS 5   // change to whatever CS pin you're actually using
+
+// ---------- Song list state ----------
+#define MAX_SONGS 200
+String songNames[MAX_SONGS];
+int songCount = 0;
+
+int topVisibleIndex = 0;   // for scrolling
+int selectedIndex   = 0;   // for later rotary encoder integration
+
+const int LINE_HEIGHT = 12;   // px per line of text (size 1 font)
+const int VISIBLE_LINES = SCREEN_HEIGHT / LINE_HEIGHT;
+
+bool isAudioFile(const String &name) {
+  String lower = name;
+  lower.toLowerCase();
+  return lower.endsWith(".mp3") || lower.endsWith(".wav");
+}
+
+void scanDirectory(File dir, int depth = 0) {
+  while (true) {
+    File entry = dir.openNextFile();
+    if (!entry) break;
+
+    String name = entry.name();
+
+    if (entry.isDirectory()) {
+      // Go one level deep into subfolders (e.g. /Music/Album)
+      if (depth < 1) {
+        scanDirectory(entry, depth + 1);
+      }
+    } else if (isAudioFile(name) && songCount < MAX_SONGS) {
+      songNames[songCount++] = name;
+    }
+    entry.close();
+  }
+}
+
+void drawSongList() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SH110X_WHITE);
+
+  if (songCount == 0) {
+    display.setCursor(0, 0);
+    display.println("No songs found");
+    display.display();
+    return;
+  }
+
+  for (int i = 0; i < VISIBLE_LINES; i++) {
+    int songIdx = topVisibleIndex + i;
+    if (songIdx >= songCount) break;
+
+    display.setCursor(0, i * LINE_HEIGHT);
+
+    // Highlight the "selected" row with an arrow marker
+    if (songIdx == selectedIndex) {
+      display.print("> ");
+    } else {
+      display.print("  ");
+    }
+
+    // Truncate long filenames so they fit on screen
+    String name = songNames[songIdx];
+    if (name.length() > 18) {
+      name = name.substring(0, 18);
+    }
+    display.println(name);
+  }
+
+  display.display();
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(200);
+
+  // --- Init display ---
+  Wire.begin(21, 22); // SDA, SCL
+  if (!display.begin(OLED_I2C_ADDR, true)) {
+    Serial.println("SH1107 not found — check wiring/address");
+    while (true) delay(1000);
+  }
+  display.clearDisplay();
+  display.setTextColor(SH110X_WHITE);
+  display.setCursor(0, 0);
+  display.println("Mounting SD...");
+  display.display();
+
+  // --- Init SD card ---
+  if (!SD.begin(SD_CS)) {
+    Serial.println("SD card mount failed");
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println("SD mount failed!");
+    display.display();
+    return;
+  }
+
+  Serial.println("SD card mounted, scanning for songs...");
+  File root = SD.open("/");
+  scanDirectory(root);
+  root.close();
+
+  Serial.printf("Found %d songs\n", songCount);
+  drawSongList();
+}
+
+void loop() {
+  // Placeholder: hook your rotary encoder here to change
+  // selectedIndex / topVisibleIndex, then call drawSongList()
+  // again whenever the selection changes.
+  //
+  // Example scrolling logic once you read encoder direction:
+  //
+  // if (encoderMovedDown && selectedIndex < songCount - 1) {
+  //   selectedIndex++;
+  //   if (selectedIndex >= topVisibleIndex + VISIBLE_LINES) {
+  //     topVisibleIndex++;
+  //   }
+  //   drawSongList();
+  // }
+}
