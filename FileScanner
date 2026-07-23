@@ -1,0 +1,62 @@
+#include <SD.h>
+#include <SPI.h>
+
+const int chipSelect = 5;
+File root;
+
+void printDirectory(File dir, int numTabs);
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000); // Let power stabilize on boot
+
+  Serial.println("Initializing SD card...");
+
+  // Initialize standard ESP32 SPI pins explicitly
+  // SPI.begin(SCK, MISO, MOSI, SS) -> (18, 19, 23, 5)
+  SPI.begin(18, 19, 23, chipSelect);
+
+  // Lower speed to 4MHz (4000000) to prevent signal noise/brownouts
+  if (!SD.begin(chipSelect, SPI, 4000000)) {
+    Serial.println("Initialization failed. Things to check:");
+    Serial.println("1. Is a card inserted?");
+    Serial.println("2. Is your wiring correct?");
+    Serial.println("3. Did you change chipSelect to match your pin?");
+    while (true);
+  }
+
+  Serial.println("Initialization Done!");
+
+  root = SD.open("/");
+  if (root) {
+    printDirectory(root, 0);
+    root.close();
+  }
+  
+  Serial.println("Done!");
+}
+
+void loop() {}
+
+void printDirectory(File dir, int numTabs) {
+  dir.rewindDirectory();
+  while (true) {
+    File entry = dir.openNextFile();
+    if (!entry) break;
+
+    for (uint8_t i = 0; i < numTabs; i++) {
+      Serial.print('\t');
+    }
+
+    Serial.print(entry.name());
+
+    if (entry.isDirectory()) {
+      Serial.println("/");
+      printDirectory(entry, numTabs + 1);
+    } else {
+      Serial.print("\t\t");
+      Serial.println(entry.size(), DEC);
+    }
+    entry.close();
+  }
+}
