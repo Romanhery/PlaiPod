@@ -1,0 +1,87 @@
+//Libraries
+#include <SD.h>
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SH110X.h>
+
+//-----Definitions-----
+#define SCREEN_HEIGHT 128
+#define SCREEN_WIDTH 128
+#define OLED_RESET -1
+// Chips Select is pin number 5
+const int CS = 5;
+File root;
+
+//screen initilizations
+Adafruit_SH1107 display = Adafruit_SH1107(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET, 1000000, 100000);
+
+//defining printDirectory functions
+void printDirectory(File dir, int numTabs);
+
+//setup
+void setup(){
+  // Serial Baud Connection rate init too
+  Serial.begin(115200);
+  delay(1000); // Power Stabilization
+
+  //-----------Initializations-----------
+  Serial.print("Initializing SD Card and Display...");
+  //Init for the pins
+  //Pins (SCK, MISO, MOSI, SS)
+  SPI.begin(18,19,23,CS);
+  if (!display.begin(0x3C, true)){
+    Serial.print("SH1107 allocation failed");
+    while (true);
+  }
+  if (!SD.begin(CS,SPI, 4000000)) {
+    Serial.println("Initialization failed. Things to check:");
+    Serial.println("1. Is a card inserted?");
+    Serial.println("2. Is your wiring correct?");
+    Serial.println("3. Did you change chipSelect to match your pin?");
+    while (true);
+  }
+  display.clearDisplay();
+  Serial.println("Initilization Done!");
+
+  //text configurations
+  display.setTextSize(1);
+  display.setTextColor(SH110X_WHITE);
+  display.setCursor(0,0);
+  
+  root = SD.open("/");
+  if (root){
+    printDirectory(root, 0);
+    root.close();
+  }
+  display.display();
+  Serial.println("Done reading the stuff!");
+}
+void loop(){
+
+}
+
+void printDirectory(File dir, int numTabs) {
+    dir.rewindDirectory();
+    while (true) {
+      File entry = dir.openNextFile();
+      if (!entry) break;
+
+      for (uint8_t i = 0; i < numTabs; i++) {
+        Serial.print('\t');
+      }
+
+      Serial.print(entry.name());
+      display.print('> ');
+      display.println(entry.name());
+
+      if (entry.isDirectory()) {
+        Serial.println("/");
+        printDirectory(entry, numTabs + 1);
+      } else {
+        Serial.print("\t\t");
+        Serial.println(entry.size(), DEC);
+      }
+      entry.close();
+  }
+} 
